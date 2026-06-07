@@ -16,6 +16,9 @@ wheels/
 .env.development
 # Keep .env.example tracked (it's a template, not a secret)
 
+# Implementation guide (committed once, then ignored)
+wc2026-dashboard-django-guide.md
+
 # Database and ML model artifacts
 *.db
 *.pkl

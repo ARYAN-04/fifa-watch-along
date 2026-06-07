@@ -31,4 +31,4 @@ Early development. Phases being built in order:
 4. React frontend
 5. Deployment
 
-See `wc2026-dashboard-django-guide.md` for the full spec.
+
