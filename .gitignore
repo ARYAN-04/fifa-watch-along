@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets and environment
+.env
+.env.local
+.env.production
+.env.development
+# Keep .env.example tracked (it's a template, not a secret)
+
+# Database and ML model artifacts
+*.db
+*.pkl
+*.sqlite3
+
+# macOS
+.DS_Store
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# Django
+staticfiles/
+*.mo
