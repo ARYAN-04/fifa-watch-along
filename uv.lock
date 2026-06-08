@@ -175,26 +175,12 @@ wheels = [
 ]
 
 [[package]]
-name = "django-cors-headers"
-version = "4.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "asgiref" },
-    { name = "django" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8a/04/a280a98256602d3f4fffae37a9410711fb80f9d6cf199679f6e93bbdb8b3/django-cors-headers-4.3.1.tar.gz", hash = "sha256:0bf65ef45e606aff1994d35503e6b677c0b26cafff6506f8fd7187f3be840207", size = 21146, upload-time = "2023-11-14T17:27:29.31Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/6a/3428ab5d1ec270e845f4ef064a7cefbf1339b4454788d77c00d36caa828c/django_cors_headers-4.3.1-py3-none-any.whl", hash = "sha256:0b1fd19297e37417fc9f835d39e45c8c642938ddba1acce0c1753d3edef04f36", size = 12785, upload-time = "2023-11-14T17:27:27.128Z" },
-]
-
-[[package]]
 name = "fifa-watch-along"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "django" },
     { name = "django-apscheduler" },
-    { name = "django-cors-headers" },
     { name = "gunicorn" },
     { name = "joblib" },
     { name = "numpy" },
@@ -209,7 +195,6 @@ dependencies = [
 requires-dist = [
     { name = "django", specifier = "==5.0.6" },
     { name = "django-apscheduler", specifier = "==0.6.2" },
-    { name = "django-cors-headers", specifier = "==4.3.1" },
     { name = "gunicorn", specifier = "==22.0.0" },
     { name = "joblib", specifier = "==1.4.2" },
     { name = "numpy", specifier = "==1.26.4" },
