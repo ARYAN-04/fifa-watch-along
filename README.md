@@ -19,16 +19,16 @@ Real-time dashboard for the 2026 World Cup — live goal events, ML-powered win 
 | ML | scikit-learn (HistGradientBoosting + CalibratedClassifierCV) |
 | Frontend | Next.js 14, Recharts |
 | Data | football-data.org (live), StatsBomb Open Data (training), SoFIFA (ratings) |
-| Package mgr | uv (Python 3.11) |
+| Package mgr | uv (Python 3.11) + pnpm (frontend) |
 | Deploy | Render (backend) + Vercel (frontend) |
 
 ## Status
 
-Early development. Phases being built in order:
-1. ML model training pipeline
-2. Pre-match data pipeline
-3. Django backend
-4. Next.js frontend
-5. Deployment
+Phases completed:
+1. ✅ ML model pipeline — trained on StatsBomb WC 2022 data (log loss 0.43)
+2. ✅ Pre-match data pipeline — Django bootstrapped, DB schema migrated, seed script ready
+3. ⬜ Django backend — views, poller, inference TBD
+4. ⬜ Next.js frontend
+5. ⬜ Deployment
 
 

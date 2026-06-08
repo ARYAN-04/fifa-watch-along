@@ -27,12 +27,14 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 ├── frontend/            # Next.js app (App Router)
 │   └── src/components/  # WinProbGraph, EventTicker, PlayerRatings, etc.
 ├── tests/               # Test fixtures and replay scripts
+├── manage.py            # Django CLI entrypoint
 ├── .venv/               # Virtual environment (Python 3.11)
 ├── requirements.txt     # Auto-generated via `uv export` for Docker
 ├── uv.lock              # Lockfile for reproducible installs
 ├── pyproject.toml       # Project metadata + dependencies (uv source of truth)
 ├── Dockerfile
-├── .env.example
+├── .env                 # Local secrets (gitignored)
+├── .env.example         # Template for .env
 └── AGENTS.md            # ← This file — update after every meaningful change
 ```
 
@@ -63,4 +65,5 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 |---|---|
 | 2026-06-07 | Initial project bootstrap. Created directory structure, AGENTS.md, .gitignore, .env.example. Installed deps via `uv add`. `statsbombpy` unpinned (v1.0.3 doesn't exist on PyPI; resolved to 1.19.0). Python 3.11 managed by uv. Removed placeholder `main.py`. |
 | 2026-06-08 | **Phase 1 complete.** Created `ml/features.py` (7-feature vector), `data_pipeline/load_statsbomb.py` (StatsBomb dataset builder), `ml/train.py` (HGB+CalibratedClassifierCV training), `ml/evaluate.py` (calibration checks). Ran load_statsbomb.py → `data/wc2022_game_states.json` (6,080 rows, 64 WC 2022 matches). Ran train.py → `ml/win_prob_model.pkl` (log loss 0.4310 on held-out set). Model slightly overconfident on sanity checks because `pre_match_elo_diff=0` in training data — expected, real ELO diffs will improve calibration at inference time. |
+| 2026-06-08 | **Phase 2 started (minimal bootstrap + schema).** Bootstrapped Django project: `manage.py`, `wc2026/settings.py`, `wc2026/urls.py`, `wc2026/wsgi.py`. Created all 7 ORM models in `dashboard/models.py`, admin registrations, `apps.py`, stub `views.py` + `poller.py` + `urls.py`. Created `data_pipeline/seed_db.py` (skips API calls if `FOOTBALL_DATA_API_KEY` is unset). Ran `makemigrations` + `migrate` → `wc2026.db` schema created (232KB, 16 tables). `.env` template written with placeholder key. |
 
