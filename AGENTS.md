@@ -20,8 +20,10 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 ├── wc2026/              # Django project config (settings, urls, wsgi)
 ├── dashboard/           # Django app (models, views, admin, poller, inference)
 ├── ml/                  # ML training pipeline (features.py, train.py, evaluate.py)
+│   └── win_prob_model.pkl   # Trained model (~4.7MB, committed)
 ├── data_pipeline/       # Data loading scripts (load_statsbomb, fetch_sofifa, seed_db)
 │   └── data/            # Static JSON data files
+│       └── wc2022_game_states.json   # 6,080 rows from StatsBomb WC 2022
 ├── frontend/            # React SPA (Vite)
 │   └── src/components/  # WinProbGraph, EventTicker, PlayerRatings, etc.
 ├── tests/               # Test fixtures and replay scripts
@@ -54,3 +56,4 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 | Date | Change |
 |---|---|
 | 2026-06-07 | Initial project bootstrap. Created directory structure, AGENTS.md, .gitignore, .env.example. Installed deps via `uv add`. `statsbombpy` unpinned (v1.0.3 doesn't exist on PyPI; resolved to 1.19.0). Python 3.11 managed by uv. Removed placeholder `main.py`. |
+| 2026-06-08 | **Phase 1 complete.** Created `ml/features.py` (7-feature vector), `data_pipeline/load_statsbomb.py` (StatsBomb dataset builder), `ml/train.py` (HGB+CalibratedClassifierCV training), `ml/evaluate.py` (calibration checks). Ran load_statsbomb.py → `data/wc2022_game_states.json` (6,080 rows, 64 WC 2022 matches). Ran train.py → `ml/win_prob_model.pkl` (log loss 0.4310 on held-out set). Model slightly overconfident on sanity checks because `pre_match_elo_diff=0` in training data — expected, real ELO diffs will improve calibration at inference time. |
