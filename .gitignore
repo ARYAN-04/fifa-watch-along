@@ -16,7 +16,7 @@ wheels/
 .env.development
 # Keep .env.example tracked (it's a template, not a secret)
 
-# Project requirements documents
+# Project requirements document
 wc2026-dashboard-django-guide.md
 
 # Implementation notes (not part of the project codebase)

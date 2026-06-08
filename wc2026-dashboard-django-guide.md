@@ -12,7 +12,7 @@
 5. [Phase 1 — ML Win Probability Model](#5-phase-1--ml-win-probability-model)
 6. [Phase 2 — Pre-Match Data Pipeline](#6-phase-2--pre-match-data-pipeline)
 7. [Phase 3 — Backend (Django)](#7-phase-3--backend-django)
-8. [Phase 4 — Frontend (React)](#8-phase-4--frontend-react)
+8. [Phase 4 — Frontend (Next.js)](#8-phase-4--frontend-nextjs)
 9. [Phase 5 — Deployment](#9-phase-5--deployment)
 10. [Match Day Operations](#10-match-day-operations)
 11. [Fallback & Error Handling](#11-fallback--error-handling)
@@ -57,7 +57,7 @@ audience of friends and LinkedIn visitors. The dashboard shows:
 | ML | scikit-learn | Lightweight, serialisable, no GPU needed |
 | Data loading | statsbombpy, requests | Official StatsBomb Python client + sync HTTP |
 | Production server | Gunicorn | Standard Django production server |
-| Frontend | React 18, Recharts | Component-based; Recharts for the probability graph |
+| Frontend | Next.js 14, Recharts | React framework with App Router; Recharts for the probability graph |
 | Deployment | Render (backend), Vercel (frontend) | Both free, both deploy from GitHub |
 
 ### Why Django Over FastAPI for This Project
@@ -80,7 +80,7 @@ tasks. For a single-match polling use case this is entirely fine.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    VERCEL (Frontend)                     │
-│  React SPA — polls /api/state every 30s                 │
+│  Next.js SPA — polls /api/state every 30s               │
 │  Panels: WinProb Graph │ Event Ticker │ Player Ratings  │
 │          Pre-Match Context │ Standings                  │
 └────────────────────────┬────────────────────────────────┘
@@ -142,7 +142,7 @@ tasks. For a single-match polling use case this is entirely fine.
    pre_match_elo_diff, red_card_diff) into the loaded `.pkl` model.
 5. Writes a new `WinProbabilitySnapshot` row to SQLite.
 6. Updates the module-level `current_state` dict.
-7. React frontend polls `/api/state` every 30 seconds, updates graph and ticker.
+7. Next.js frontend polls `/api/state` every 30 seconds, updates graph and ticker.
 
 ### Important: Single Worker Constraint
 
@@ -186,7 +186,7 @@ wc2026-dashboard/
 │   └── data/
 │       ├── wc2022_game_states.json
 │       └── wc2026_squads.json
-├── frontend/                      # React app (separate deploy to Vercel)
+├── frontend/                      # Next.js app (separate deploy to Vercel)
 │   ├── src/
 │   │   ├── App.jsx
 │   │   ├── api.js
@@ -1395,7 +1395,7 @@ def health(request):
 
 def state(request):
     """
-    Primary endpoint — React polls this every 30 seconds.
+    Primary endpoint — Next.js frontend polls this every 30 seconds.
     Returns full live match state including ML win probability history.
     Reads directly from in-memory dict: zero DB queries, instant response.
     """
@@ -1494,21 +1494,21 @@ def all_matches(request):
 
 ---
 
-## 8. Phase 4 — Frontend (React)
+## 8. Phase 4 — Frontend (Next.js)
 
 ### Setup
 
 ```bash
 cd frontend
-npm create vite@latest . -- --template react
-npm install recharts
+pnpm create next-app@latest . -- --typescript --tailwind --eslint
+pnpm add recharts
 ```
 
 ### API Client
 
-**`frontend/src/api.js`**
-```javascript
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+**`frontend/src/api.ts`**
+```typescript
+const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = {
   getState:     () => fetch(`${BASE}/api/state/`).then(r => r.json()),
@@ -1770,29 +1770,26 @@ export default function App() {
 }
 ```
 
-### Vite Config
+### Next.js Config
 
-**`frontend/vite.config.js`:**
-```javascript
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+**`frontend/next.config.ts`:**
+```typescript
+import type { NextConfig } from 'next';
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: { '/api': 'http://localhost:8000' }
-  }
-});
+const nextConfig: NextConfig = {};
+// CORS handled server-side by django-cors-headers
+
+export default nextConfig;
 ```
 
-**`frontend/.env`** (local dev):
+**`frontend/.env.local`** (local dev):
 ```
-VITE_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 **`frontend/.env.production`** (Vercel):
 ```
-VITE_API_URL=https://your-backend.onrender.com
+NEXT_PUBLIC_API_URL=https://your-backend.onrender.com
 ```
 
 ---
@@ -1900,9 +1897,9 @@ This keeps cold start latency out of your friends' and LinkedIn visitors' experi
 
 1. Go to **vercel.com** → New Project → Import your GitHub repo.
 2. Set **Root Directory** to `frontend`.
-3. Framework preset: Vite.
+3. Framework preset: Next.js.
 4. Add environment variable:
-   - `VITE_API_URL` = `https://your-app-name.onrender.com`
+   - `NEXT_PUBLIC_API_URL` = `https://your-app-name.onrender.com`
 5. Deploy. You'll get a URL like `your-app.vercel.app`.
 6. Go back to Render → Environment → update `FRONTEND_URL` to your Vercel URL.
    Redeploy the Render service to apply the CORS update.
@@ -2113,7 +2110,7 @@ ab -n 100 -c 20 https://your-backend.onrender.com/api/state/
 ```bash
 # Local development
 python manage.py runserver        # Django backend on :8000
-cd frontend && npm run dev        # React frontend on :5173
+cd frontend && pnpm dev           # Next.js frontend on :3000
 
 # Database
 python manage.py makemigrations dashboard
@@ -2143,5 +2140,5 @@ python manage.py shell -c "from dashboard.poller import poll_match; poll_match()
 
 *Built for FIFA World Cup 2026 (June 11 – July 19, 2026).*
 *All data sources free tier: football-data.org, StatsBomb Open Data, SoFIFA API.*
-*Stack: Django 5, APScheduler, SQLite, scikit-learn, React 18, Recharts.*
+*Stack: Django 5, APScheduler, SQLite, scikit-learn, Next.js, Recharts.*
 *Deployed: Render (backend) + Vercel (frontend). Total cost: £0.*

@@ -9,10 +9,10 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 
 - **Backend:** Django 5 + Gunicorn (1 worker), SQLite, django-apscheduler
 - **ML:** scikit-learn (HistGradientBoostingClassifier + CalibratedClassifierCV)
-- **Frontend:** React 18 + Vite + Recharts
+- **Frontend:** Next.js 14 + App Router + Recharts
 - **Data:** football-data.org (live), StatsBomb Open Data (ML training), SoFIFA (ratings)
 - **Deploy:** Render (backend) + Vercel (frontend)
-- **Package Manager:** uv (Python 3.11 via `uv python install`)
+- **Package Manager:** uv (Python 3.11 via `uv python install`) + pnpm (frontend)
 
 ## Directory Layout
 
@@ -24,7 +24,7 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 ├── data_pipeline/       # Data loading scripts (load_statsbomb, fetch_sofifa, seed_db)
 │   └── data/            # Static JSON data files
 │       └── wc2022_game_states.json   # 6,080 rows from StatsBomb WC 2022
-├── frontend/            # React SPA (Vite)
+├── frontend/            # Next.js app (App Router)
 │   └── src/components/  # WinProbGraph, EventTicker, PlayerRatings, etc.
 ├── tests/               # Test fixtures and replay scripts
 ├── .venv/               # Virtual environment (Python 3.11)
@@ -41,7 +41,7 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 1. **Phase 1 — ML Model** (offline): StatsBomb training data → win_prob_model.pkl
 2. **Phase 2 — Data Pipeline** (offline): Seed SQLite with teams, matches, players
 3. **Phase 3 — Django Backend**: Models, admin, views, poller, inference
-4. **Phase 4 — React Frontend**: Components, API client, graph
+4. **Phase 4 — Next.js Frontend**: Components, API client, graph
 5. **Phase 5 — Deployment**: Docker, Render, Vercel
 
 ## Rules for This Agent
@@ -50,6 +50,12 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
   dependency changes, configuration changes).
 - Keep directory layout in sync with the actual project structure.
 - Log decisions and rationale so future sessions pick up context instantly.
+- **PNPM ONLY**: Use `pnpm` for ALL frontend package operations. Never `npm install`,
+  `npm add`, `npm create`, or any npm command. Every frontend operation must use pnpm
+  (`pnpm add`, `pnpm dev`, `pnpm build`, `pnpm create next-app`, etc.).
+- **MINIMUM RELEASE AGE**: The `minReleaseAge` or equivalent setting in any config
+  file (including `.npmrc`, `.pnpmrc`, or platform settings) must never be altered,
+  removed, or circumvented.
 
 ## Change Log
 
@@ -57,3 +63,4 @@ win probability, live goal events, FC 26 player ratings, and pre-match context.
 |---|---|
 | 2026-06-07 | Initial project bootstrap. Created directory structure, AGENTS.md, .gitignore, .env.example. Installed deps via `uv add`. `statsbombpy` unpinned (v1.0.3 doesn't exist on PyPI; resolved to 1.19.0). Python 3.11 managed by uv. Removed placeholder `main.py`. |
 | 2026-06-08 | **Phase 1 complete.** Created `ml/features.py` (7-feature vector), `data_pipeline/load_statsbomb.py` (StatsBomb dataset builder), `ml/train.py` (HGB+CalibratedClassifierCV training), `ml/evaluate.py` (calibration checks). Ran load_statsbomb.py → `data/wc2022_game_states.json` (6,080 rows, 64 WC 2022 matches). Ran train.py → `ml/win_prob_model.pkl` (log loss 0.4310 on held-out set). Model slightly overconfident on sanity checks because `pre_match_elo_diff=0` in training data — expected, real ELO diffs will improve calibration at inference time. |
+
