@@ -26,11 +26,11 @@ No CORS. The browser never talks to Django directly. Next.js API routes are pure
 ## Stack
 
 | Layer | What |
-|---|---|
+|---|---|---|
 | Backend | Django 5, Gunicorn (1 worker), django-apscheduler |
 | Database | SQLite via Django ORM |
 | ML | scikit-learn (HistGradientBoosting + CalibratedClassifierCV) |
-| Frontend | Next.js 16, Recharts |
+| Frontend | Next.js 16, Recharts 3, lucide-react, Tailwind CSS 4 |
 | Data | football-data.org (live), StatsBomb Open Data (training), SoFIFA (ratings) |
 | Package mgr | uv (Python 3.11) + pnpm (frontend) |
 | Deploy | Render (backend) + Vercel (frontend) |
@@ -55,15 +55,26 @@ All exposed via Next.js API routes at `/api/*`; each proxies to Django at `BACKE
 | 1. ML Model — trained on StatsBomb WC 2022 (log loss 0.43) | ✅ Complete |
 | 2. Data Pipeline — Django bootstrap, schema, seed script | ✅ Complete |
 | 3. Django Backend — API views, admin, poller, inference | ✅ API views done; poller + inference TBD |
-| 4. Next.js Frontend — BFF proxy routes, components | 🚧 Proxy layer done; components TBD |
+| 4. Next.js Frontend — BFF proxy routes, dashboard components, mock fallback | ✅ Complete (proxy routes return mock data when backend is offline) |
 | 5. Deployment — Docker, Render, Vercel | ⬜ Not started |
 
 ## Local Development
 
 ```bash
-# Terminal 1 — Django API
+# Terminal 1 — Django API (optional if mock data is sufficient)
 uv run python manage.py runserver
 
 # Terminal 2 — Next.js (BFF proxy + frontend)
 pnpm --dir frontend dev
 ```
+
+### Quick Start (no backend needed)
+
+The frontend works standalone with built-in mock data. No Django, no database required:
+
+```bash
+pnpm --dir frontend dev
+# Open http://localhost:3000 — mock Argentina vs Canada match
+```
+
+When Django is running with real data, the mock fallback is automatically bypassed — routes try the backend first and only serve mock data on connection failure.
