@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
-from api.routers import health, match, win_probability, events, standings, players
+from api.routers import health, match, win_probability, events, standings, players, replay
 from api.services.poller import poll_match
 
 # Configure logging
@@ -57,3 +57,4 @@ app.include_router(win_probability.router)
 app.include_router(events.router)
 app.include_router(standings.router)
 app.include_router(players.router)
+app.include_router(replay.router)

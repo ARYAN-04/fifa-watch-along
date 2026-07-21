@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import Optional
 from api.db import get_db
 from api.models import MatchConfig, WinProbabilitySnapshot
 from api.schemas import WinProbabilityResponse, CurrentWinProbability, WinProbabilityHistoryItem
@@ -8,14 +9,22 @@ router = APIRouter()
 
 @router.get("/api/win-probability", response_model=WinProbabilityResponse)
 @router.get("/api/win-probability/", response_model=WinProbabilityResponse)
-def get_win_probability(db: Session = Depends(get_db)):
+def get_win_probability(
+    db: Session = Depends(get_db),
+    minute: Optional[int] = Query(None, description="Replay minute to filter snapshots up to"),
+):
     cfg = db.query(MatchConfig).first()
     if not cfg or not cfg.current_match_id:
         raise HTTPException(status_code=404, detail="No match configured")
 
-    snapshots = db.query(WinProbabilitySnapshot).filter(
+    snapshots_q = db.query(WinProbabilitySnapshot).filter(
         WinProbabilitySnapshot.match_id == cfg.current_match_id
-    ).order_by(WinProbabilitySnapshot.minute.asc()).all()
+    )
+
+    if minute is not None:
+        snapshots_q = snapshots_q.filter(WinProbabilitySnapshot.minute <= minute)
+
+    snapshots = snapshots_q.order_by(WinProbabilitySnapshot.minute.asc()).all()
 
     current_snapshot = snapshots[-1] if snapshots else None
     current_data = None

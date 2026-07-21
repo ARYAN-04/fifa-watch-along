@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import List, Optional
 from api.db import get_db
 from api.models import MatchConfig, MatchEvent
 from api.schemas import MatchEventResponse
@@ -9,16 +9,24 @@ router = APIRouter()
 
 @router.get("/api/events", response_model=List[MatchEventResponse])
 @router.get("/api/events/", response_model=List[MatchEventResponse])
-def get_match_events(db: Session = Depends(get_db)):
+def get_match_events(
+    db: Session = Depends(get_db),
+    minute: Optional[int] = Query(None, description="Replay minute to filter events up to"),
+):
     cfg = db.query(MatchConfig).first()
     if not cfg or not cfg.current_match_id:
         raise HTTPException(status_code=404, detail="No match configured")
 
-    events = db.query(MatchEvent).options(
+    events_q = db.query(MatchEvent).options(
         joinedload(MatchEvent.team)
     ).filter(
         MatchEvent.match_id == cfg.current_match_id
-    ).order_by(MatchEvent.minute.asc()).all()
+    )
+
+    if minute is not None:
+        events_q = events_q.filter(MatchEvent.minute <= minute)
+
+    events = events_q.order_by(MatchEvent.minute.asc()).all()
 
     return [
         MatchEventResponse(

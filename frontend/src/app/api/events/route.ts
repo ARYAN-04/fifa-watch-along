@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrl } from '@/lib/backend';
 
 const MOCK_EVENTS = [
@@ -8,9 +8,13 @@ const MOCK_EVENTS = [
   { id: 4, minute: 68, event_type: 'SUBSTITUTION', team: 'Canada', team_id: 2, player_name: 'J. David ← C. Larin', assist_name: '', detail: '' },
 ];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const res = await fetch(`${getBackendUrl()}/api/events/`, { next: { revalidate: 0 } });
+    const { searchParams } = request.nextUrl;
+    const minute = searchParams.get('minute');
+    let url = `${getBackendUrl()}/api/events/`;
+    if (minute) url += `?minute=${minute}`;
+    const res = await fetch(url, { next: { revalidate: 0 } });
     if (!res.ok) return NextResponse.json(MOCK_EVENTS);
     const data = await res.json();
     return NextResponse.json(data);
