@@ -5,14 +5,26 @@ description = "FIFA World Cup 2026 Watch-Along Dashboard"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "django==5.0.6",
-    "django-apscheduler==0.6.2",
+    "alembic>=1.18.5",
+    "apscheduler>=3.11.2",
+    "fastapi>=0.139.2",
     "gunicorn==22.0.0",
+    "itsdangerous>=2.2.0",
     "joblib==1.4.2",
     "numpy==1.26.4",
     "pandas==2.2.2",
+    "pydantic>=2.13.4",
     "python-dotenv==1.0.1",
     "requests==2.32.3",
     "scikit-learn==1.5.0",
+    "sqladmin>=0.29.0",
+    "sqlalchemy>=2.0.51",
     "statsbombpy",
+    "uvicorn>=0.51.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
 ]

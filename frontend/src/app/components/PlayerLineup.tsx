@@ -1,7 +1,5 @@
 'use client';
 
-import { Trophy } from 'lucide-react';
-
 interface PlayerData {
   id: number;
   name: string;
@@ -21,21 +19,23 @@ interface Props {
 }
 
 export default function PlayerLineup({ homeTeam, awayTeam }: Props) {
-  const renderColumn = (team: TeamGroup, accentColor: string) => (
-    <div>
-      <h3 className={`text-sm font-semibold ${accentColor} mb-4 pb-2 border-b border-zinc-800`}>
+  const renderColumn = (team: TeamGroup, titleColorClass: string) => (
+    <div className="flex-1">
+      <h3 className={`font-serif font-bold text-base ${titleColorClass} mb-2`}>
         {team.name}
       </h3>
+      <div className="text-[10px] text-muted-brown uppercase tracking-wider mb-2 font-mono">
+        Roster rating details
+      </div>
       {team.players.length === 0 ? (
-        <p className="text-zinc-500 text-sm">No player data available</p>
+        <p className="text-muted-brown text-xs font-mono py-4">No ratings seeded yet</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="divide-y divide-rule border-t border-b border-rule">
           {team.players.map((player) => (
-            <li key={player.id} className="flex items-center justify-between text-sm">
-              <span className="text-zinc-300 truncate mr-2">{player.name}</span>
-              <span className="text-zinc-600 font-mono text-xs whitespace-nowrap">
-                {player.position ? `${player.position} · ` : ''}{player.overall_rating} OVR
-              </span>
+            <li key={player.id} className="grid grid-cols-[40px_1fr_30px] gap-2 items-center py-2 text-xs font-mono text-ink">
+              <span className="text-muted-brown font-bold uppercase">{player.position || 'N/A'}</span>
+              <span className="truncate pr-1">{player.name}</span>
+              <span className="font-serif font-black text-gold text-right text-base leading-none">{player.overall_rating}</span>
             </li>
           ))}
         </ul>
@@ -45,13 +45,11 @@ export default function PlayerLineup({ homeTeam, awayTeam }: Props) {
 
   return (
     <div>
-      <div className="mb-6 flex justify-between items-center">
-        <h2 className="text-lg font-medium">Top Rated Squad</h2>
-        <Trophy className="w-4 h-4 text-zinc-400" />
-      </div>
-      <div className="grid grid-cols-2 gap-8">
-        {renderColumn(homeTeam, 'text-rose-500')}
-        {renderColumn(awayTeam, 'text-zinc-400')}
+      <h2 className="font-serif font-bold text-xl mb-1">Squad Ratings</h2>
+      <hr className="border-t-2 border-ink mb-4" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-8">
+        {renderColumn(homeTeam, 'text-navy')}
+        {renderColumn(awayTeam, 'text-brick')}
       </div>
     </div>
   );

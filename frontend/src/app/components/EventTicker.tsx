@@ -6,50 +6,64 @@ interface MatchEvent {
   event_type: string;
   team: string | null;
   player_name: string;
+  assist_name?: string;
 }
 
 interface Props {
   events: MatchEvent[];
 }
 
-const eventConfig: Record<string, { label: string; dot: string }> = {
-  GOAL: { label: 'Goal', dot: 'bg-emerald-500' },
-  YELLOW_CARD: { label: 'Yellow Card', dot: 'bg-yellow-400' },
-  RED_CARD: { label: 'Red Card', dot: 'bg-red-600' },
-  SUBSTITUTION: { label: 'Substitution', dot: 'bg-sky-500' },
+const eventEmoji: Record<string, string> = {
+  GOAL: '⚽',
+  YELLOW_CARD: '🟨',
+  RED_CARD: '🟥',
+  SUBSTITUTION: '🔄',
+};
+
+const eventLabel: Record<string, string> = {
+  GOAL: 'Goal',
+  YELLOW_CARD: 'Yellow Card',
+  RED_CARD: 'Red Card',
+  SUBSTITUTION: 'Substitution',
 };
 
 export default function EventTicker({ events }: Props) {
   if (events.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">
+      <div className="flex-1 flex items-center justify-center text-muted-brown text-sm py-8 font-mono">
         No events yet
       </div>
     );
   }
 
+  // Show newest events first (like a broadsheet print feed of logs)
+  const sortedEvents = [...events].sort((a, b) => b.minute - a.minute);
+
   return (
-    <div className="flex-1 overflow-y-auto pr-2 space-y-4 scrollbar-hide">
-      {events.map((event) => {
-        const cfg = eventConfig[event.event_type] ?? { label: event.event_type, dot: 'bg-zinc-500' };
+    <ul className="divide-y divide-dotted divide-rule">
+      {sortedEvents.map((event) => {
+        const emoji = eventEmoji[event.event_type] ?? '•';
+        const label = eventLabel[event.event_type] ?? event.event_type;
         return (
-          <div
-            key={event.id}
-            className="flex gap-4 items-start pb-4 border-b border-zinc-800/50 last:border-0"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className={`w-2 h-2 rounded-full ${cfg.dot} flex-shrink-0`} />
-              <span className="text-rose-500 font-mono text-sm tabular-nums">{event.minute}&apos;</span>
-            </div>
-            <div className="min-w-0">
-              <div className="font-medium text-zinc-100 truncate">{cfg.label}</div>
-              <div className="text-sm text-zinc-400 truncate">
-                {event.player_name ? `${event.player_name}${event.team ? ` (${event.team})` : ''}` : event.team ?? ''}
+          <li key={event.id} className="grid grid-cols-[40px_1fr] gap-3 py-3 text-xs text-ink font-mono align-top">
+            <div className="font-serif font-bold text-base text-brick leading-none">{event.minute}&apos;</div>
+            <div>
+              <div className="leading-tight">
+                <span className="mr-1">{emoji}</span>
+                <span className="font-serif font-bold text-sm text-ink">{event.player_name}</span>
+                <span className="text-muted-brown text-[10px] ml-1 uppercase tracking-wider">
+                  {label} {event.team ? `(${event.team})` : ''}
+                </span>
               </div>
+              {event.event_type === 'GOAL' && event.assist_name && (
+                <div className="text-[10px] text-muted-brown mt-1">
+                  Assist — {event.assist_name}
+                </div>
+              )}
             </div>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }

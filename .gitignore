@@ -21,6 +21,7 @@ wc2026-dashboard-django-guide.md
 
 # Implementation notes (not part of the project codebase)
 implementation-notes.md
+AGENTS.md
 
 # Database and ML model artifacts
 *.db
