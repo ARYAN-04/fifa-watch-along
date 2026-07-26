@@ -27,6 +27,7 @@ plan.html
 # Database and ML model artifacts
 *.db
 *.pkl
+!ml/win_prob_model.pkl
 *.sqlite3
 
 # macOS

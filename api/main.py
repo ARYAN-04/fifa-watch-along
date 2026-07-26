@@ -39,15 +39,18 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 app = FastAPI(
-    title="FIFA Watch-Along FastAPI Backend",
-    description="FastAPI port of the watch-along Django backend",
+    title="FIFA World Cup 2026 Watch-Along API",
+    description="FastAPI backend for the FIFA World Cup 2026 Watch-Along Dashboard",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# Setup Admin
+# Setup Database Tables & Admin
 from api.db import engine
+from api.models import Base
 from api.admin import setup_admin
+
+Base.metadata.create_all(bind=engine)
 setup_admin(app, engine)
 
 # Include Routers

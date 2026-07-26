@@ -8,7 +8,6 @@ dependencies = [
     "alembic>=1.18.5",
     "apscheduler>=3.11.2",
     "fastapi>=0.139.2",
-    "gunicorn==22.0.0",
     "itsdangerous>=2.2.0",
     "joblib==1.4.2",
     "numpy==1.26.4",

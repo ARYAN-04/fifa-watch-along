@@ -6,7 +6,6 @@ import WinProbChart from './WinProbChart';
 import EventTicker from './EventTicker';
 import MatchInfo from './MatchInfo';
 import PlayerLineup from './PlayerLineup';
-import StandingsTable from './StandingsTable';
 import ReplayControls from './ReplayControls';
 
 interface TeamInfo {
@@ -61,24 +60,11 @@ interface MatchOption {
   away_score: number;
 }
 
-interface StandingItem {
-  position: number;
-  team: string;
-  team_id: number;
-  played: number;
-  won: number;
-  drawn: number;
-  lost: number;
-  goals_for: number;
-  goals_against: number;
-  points: number;
-}
-
 type ViewState =
   | { type: 'loading' }
   | { type: 'error'; message: string }
   | { type: 'no_match' }
-  | { type: 'loaded'; match: MatchData; winProb: WinProbSnapshot[]; events: MatchEvent[]; homePlayers: PlayerData[]; awayPlayers: PlayerData[]; standings: Record<string, StandingItem[]> };
+  | { type: 'loaded'; match: MatchData; winProb: WinProbSnapshot[]; events: MatchEvent[]; homePlayers: PlayerData[]; awayPlayers: PlayerData[] };
 
 const MAX_MINUTE = 95;
 
@@ -100,11 +86,10 @@ export default function Dashboard() {
   const fetchAll = useCallback(async (minute: number | null) => {
     try {
       const params = minute !== null ? `?minute=${minute}` : '';
-      const [matchRes, winProbRes, eventsRes, standingsRes] = await Promise.all([
+      const [matchRes, winProbRes, eventsRes] = await Promise.all([
         fetch(`/api/match/${params}`),
         fetch(`/api/win-probability/${params}`),
         fetch(`/api/events/${params}`),
-        fetch(`/api/standings/`),
       ]);
 
       if (matchRes.status === 404) {
@@ -112,7 +97,7 @@ export default function Dashboard() {
         return;
       }
 
-      if (!matchRes.ok || !winProbRes.ok || !eventsRes.ok || !standingsRes.ok) {
+      if (!matchRes.ok || !winProbRes.ok || !eventsRes.ok) {
         if (lastStateRef.current.type !== 'loaded') {
           setState({ type: 'error', message: 'Failed to load match data from backend.' });
         }
@@ -122,7 +107,6 @@ export default function Dashboard() {
       const matchData: MatchData = await matchRes.json();
       const winProbData = await winProbRes.json();
       const eventsData: MatchEvent[] = await eventsRes.json();
-      const standingsData: Record<string, StandingItem[]> = await standingsRes.json();
 
       const [homeRes, awayRes] = await Promise.all([
         fetch(`/api/players/${matchData.home_team.id}`),
@@ -144,7 +128,6 @@ export default function Dashboard() {
         events: eventsData,
         homePlayers,
         awayPlayers,
-        standings: standingsData,
       };
       lastStateRef.current = newState;
       setState(newState);
@@ -252,7 +235,7 @@ export default function Dashboard() {
     );
   }
 
-  const { match, winProb, events, homePlayers, awayPlayers, standings } = state;
+  const { match, winProb, events, homePlayers, awayPlayers } = state;
 
   return (
     <div className="w-[calc(100%-2rem)] md:w-[calc(100%-4rem)] max-w-[1400px] xl:max-w-[1600px] mx-auto bg-paper border border-ink relative my-8 shadow-sm">
@@ -330,11 +313,6 @@ export default function Dashboard() {
             awayTeam={{ name: match.away_team.name, short_name: match.away_team.short_name, players: awayPlayers }}
           />
         </div>
-      </div>
-
-      {/* Bottom Full-Width Standings Ledger */}
-      <div className="p-6 md:p-10 border-b border-ink">
-        <StandingsTable standings={standings} />
       </div>
 
       {/* Footer Strip */}

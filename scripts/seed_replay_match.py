@@ -22,7 +22,7 @@ load_dotenv(dotenv_path)
 
 from api.db import SessionLocal, engine
 from api.models import Base
-from api.models import Team, Match, MatchEvent, MatchConfig, Standing, WinProbabilitySnapshot
+from api.models import Team, Player, Match, MatchEvent, MatchConfig, Standing, WinProbabilitySnapshot
 from api.services.inference import get_model
 from ml.features import build_game_state_features
 
@@ -63,6 +63,19 @@ KNOWN_EVENTS = {
             {"minute": 90, "team": "away", "player_off": "H. Kane", "player_on": "I. Toney"},
         ],
     },
+}
+
+TEAM_ELOS = {
+    760: 2050.0,   # Spain
+    762: 2140.0,   # Argentina
+    770: 2050.0,   # England
+    773: 2110.0,   # France
+    8872: 1840.0,  # Norway
+    799: 1890.0,   # Croatia
+    804: 1750.0,   # Senegal
+    763: 1620.0,   # Ghana
+    1836: 1650.0,  # Panama
+    8062: 1580.0,  # Iraq
 }
 
 STANDINGS_TEMPLATE = {
@@ -180,31 +193,127 @@ def get_elo_diff_for_teams(home_team_id: int, away_team_id: int, db) -> float:
     return home_elo - away_elo
 
 
+PLAYER_ROSTERS = {
+    773: [  # France
+        {"id": 77301, "name": "M. Maignan", "position": "GK", "overall_rating": 87, "pace": 83, "shooting": 80, "passing": 85, "dribbling": 84, "defending": 85, "physical": 86},
+        {"id": 77302, "name": "J. Koundé", "position": "RB", "overall_rating": 85, "pace": 84, "shooting": 45, "passing": 75, "dribbling": 78, "defending": 86, "physical": 78},
+        {"id": 77303, "name": "W. Saliba", "position": "CB", "overall_rating": 88, "pace": 82, "shooting": 38, "passing": 72, "dribbling": 74, "defending": 89, "physical": 85},
+        {"id": 77304, "name": "I. Konaté", "position": "CB", "overall_rating": 84, "pace": 78, "shooting": 35, "passing": 65, "dribbling": 68, "defending": 85, "physical": 86},
+        {"id": 77305, "name": "T. Hernández", "position": "LB", "overall_rating": 86, "pace": 93, "shooting": 72, "passing": 78, "dribbling": 82, "defending": 79, "physical": 83},
+        {"id": 77306, "name": "A. Tchouaméni", "position": "CDM", "overall_rating": 86, "pace": 75, "shooting": 74, "passing": 81, "dribbling": 80, "defending": 85, "physical": 84},
+        {"id": 77307, "name": "E. Camavinga", "position": "CM", "overall_rating": 83, "pace": 80, "shooting": 68, "passing": 80, "dribbling": 84, "defending": 80, "physical": 81},
+        {"id": 77308, "name": "O. Dembélé", "position": "RW", "overall_rating": 86, "pace": 93, "shooting": 78, "passing": 81, "dribbling": 90, "defending": 36, "physical": 60},
+        {"id": 77309, "name": "A. Griezmann", "position": "CAM", "overall_rating": 88, "pace": 78, "shooting": 87, "passing": 88, "dribbling": 87, "defending": 58, "physical": 72},
+        {"id": 77310, "name": "K. Mbappé", "position": "ST", "overall_rating": 91, "pace": 97, "shooting": 90, "passing": 80, "dribbling": 92, "defending": 36, "physical": 78},
+        {"id": 77311, "name": "R. Kolo Muani", "position": "ST", "overall_rating": 82, "pace": 88, "shooting": 80, "passing": 73, "dribbling": 82, "defending": 40, "physical": 76},
+    ],
+    770: [  # England
+        {"id": 77001, "name": "J. Pickford", "position": "GK", "overall_rating": 83, "pace": 81, "shooting": 78, "passing": 84, "dribbling": 80, "defending": 81, "physical": 82},
+        {"id": 77002, "name": "K. Walker", "position": "RB", "overall_rating": 84, "pace": 90, "shooting": 63, "passing": 76, "dribbling": 77, "defending": 83, "physical": 82},
+        {"id": 77003, "name": "J. Stones", "position": "CB", "overall_rating": 86, "pace": 72, "shooting": 52, "passing": 80, "dribbling": 80, "defending": 87, "physical": 80},
+        {"id": 77004, "name": "M. Guéhi", "position": "CB", "overall_rating": 82, "pace": 75, "shooting": 40, "passing": 68, "dribbling": 70, "defending": 83, "physical": 81},
+        {"id": 77005, "name": "L. Shaw", "position": "LB", "overall_rating": 82, "pace": 79, "shooting": 60, "passing": 79, "dribbling": 79, "defending": 80, "physical": 78},
+        {"id": 77006, "name": "D. Rice", "position": "CDM", "overall_rating": 87, "pace": 76, "shooting": 68, "passing": 82, "dribbling": 80, "defending": 86, "physical": 85},
+        {"id": 77007, "name": "J. Bellingham", "position": "CAM", "overall_rating": 90, "pace": 80, "shooting": 86, "passing": 85, "dribbling": 88, "defending": 78, "physical": 84},
+        {"id": 77008, "name": "B. Saka", "position": "RW", "overall_rating": 87, "pace": 86, "shooting": 83, "passing": 83, "dribbling": 87, "defending": 65, "physical": 75},
+        {"id": 77009, "name": "P. Foden", "position": "CAM", "overall_rating": 88, "pace": 85, "shooting": 85, "passing": 87, "dribbling": 90, "defending": 56, "physical": 62},
+        {"id": 77010, "name": "C. Palmer", "position": "CAM", "overall_rating": 85, "pace": 82, "shooting": 84, "passing": 85, "dribbling": 86, "defending": 48, "physical": 68},
+        {"id": 77011, "name": "H. Kane", "position": "ST", "overall_rating": 90, "pace": 69, "shooting": 93, "passing": 84, "dribbling": 83, "defending": 47, "physical": 82},
+    ],
+    760: [  # Spain
+        {"id": 76001, "name": "U. Simón", "position": "GK", "overall_rating": 84, "pace": 82, "shooting": 79, "passing": 81, "dribbling": 81, "defending": 83, "physical": 81},
+        {"id": 76002, "name": "D. Carvajal", "position": "RB", "overall_rating": 86, "pace": 81, "shooting": 58, "passing": 78, "dribbling": 80, "defending": 84, "physical": 82},
+        {"id": 76003, "name": "R. Le Normand", "position": "CB", "overall_rating": 82, "pace": 70, "shooting": 42, "passing": 68, "dribbling": 68, "defending": 84, "physical": 82},
+        {"id": 76004, "name": "A. Laporte", "position": "CB", "overall_rating": 84, "pace": 68, "shooting": 50, "passing": 74, "dribbling": 72, "defending": 85, "physical": 81},
+        {"id": 76005, "name": "M. Cucurella", "position": "LB", "overall_rating": 82, "pace": 80, "shooting": 62, "passing": 76, "dribbling": 78, "defending": 80, "physical": 78},
+        {"id": 76006, "name": "Rodri", "position": "CDM", "overall_rating": 91, "pace": 66, "shooting": 75, "passing": 86, "dribbling": 84, "defending": 87, "physical": 85},
+        {"id": 76007, "name": "Pedri", "position": "CM", "overall_rating": 86, "pace": 78, "shooting": 70, "passing": 88, "dribbling": 89, "defending": 68, "physical": 66},
+        {"id": 76008, "name": "Dani Olmo", "position": "CAM", "overall_rating": 85, "pace": 78, "shooting": 82, "passing": 84, "dribbling": 86, "defending": 52, "physical": 66},
+        {"id": 76009, "name": "Lamine Yamal", "position": "RW", "overall_rating": 87, "pace": 90, "shooting": 82, "passing": 85, "dribbling": 91, "defending": 42, "physical": 60},
+        {"id": 76010, "name": "N. Williams", "position": "LW", "overall_rating": 85, "pace": 93, "shooting": 78, "passing": 79, "dribbling": 87, "defending": 45, "physical": 68},
+        {"id": 76011, "name": "A. Morata", "position": "ST", "overall_rating": 83, "pace": 81, "shooting": 82, "passing": 72, "dribbling": 78, "defending": 35, "physical": 76},
+    ],
+    762: [  # Argentina
+        {"id": 76201, "name": "E. Martínez", "position": "GK", "overall_rating": 87, "pace": 85, "shooting": 82, "passing": 85, "dribbling": 85, "defending": 86, "physical": 87},
+        {"id": 76202, "name": "N. Molina", "position": "RB", "overall_rating": 82, "pace": 85, "shooting": 64, "passing": 74, "dribbling": 78, "defending": 79, "physical": 76},
+        {"id": 76203, "name": "C. Romero", "position": "CB", "overall_rating": 85, "pace": 76, "shooting": 45, "passing": 65, "dribbling": 68, "defending": 86, "physical": 85},
+        {"id": 76204, "name": "N. Otamendi", "position": "CB", "overall_rating": 82, "pace": 60, "shooting": 52, "passing": 64, "dribbling": 62, "defending": 83, "physical": 82},
+        {"id": 76205, "name": "M. Acuña", "position": "LB", "overall_rating": 81, "pace": 78, "shooting": 70, "passing": 78, "dribbling": 80, "defending": 79, "physical": 81},
+        {"id": 76206, "name": "R. De Paul", "position": "CM", "overall_rating": 84, "pace": 78, "shooting": 76, "passing": 82, "dribbling": 82, "defending": 79, "physical": 83},
+        {"id": 76207, "name": "E. Fernández", "position": "CM", "overall_rating": 84, "pace": 74, "shooting": 76, "passing": 84, "dribbling": 82, "defending": 78, "physical": 78},
+        {"id": 76208, "name": "A. Mac Allister", "position": "CM", "overall_rating": 85, "pace": 74, "shooting": 78, "passing": 84, "dribbling": 84, "defending": 77, "physical": 76},
+        {"id": 76209, "name": "L. Messi", "position": "RW", "overall_rating": 88, "pace": 79, "shooting": 87, "passing": 90, "dribbling": 92, "defending": 33, "physical": 64},
+        {"id": 76210, "name": "J. Álvarez", "position": "ST", "overall_rating": 85, "pace": 85, "shooting": 84, "passing": 78, "dribbling": 85, "defending": 55, "physical": 78},
+        {"id": 76211, "name": "L. Martínez", "position": "ST", "overall_rating": 89, "pace": 82, "shooting": 88, "passing": 75, "dribbling": 85, "defending": 48, "physical": 84},
+    ]
+}
+
+
 def seed_standings(db):
     for group_letter, entries in STANDINGS_TEMPLATE.items():
         for pos, entry in enumerate(entries, 1):
             existing = db.query(Team).filter(Team.id == entry["id"]).first()
+            elo_val = TEAM_ELOS.get(entry["id"], 1800.0)
             if not existing:
                 db.add(Team(
                     id=entry["id"],
                     name=entry["name"],
                     short_name=entry["name"][:3].upper(),
                     group=f"GROUP_{group_letter}",
+                    pre_match_elo=elo_val,
                 ))
-            db.add(Standing(
-                team_id=entry["id"],
-                group=group_letter,
-                position=pos,
-                played=entry["played"],
-                won=entry["won"],
-                drawn=entry["drawn"],
-                lost=entry["lost"],
-                goals_for=entry["gf"],
-                goals_against=entry["ga"],
-                points=entry["pts"],
-            ))
+            else:
+                existing.pre_match_elo = elo_val
+
+            st = db.query(Standing).filter(Standing.team_id == entry["id"]).first()
+            if not st:
+                db.add(Standing(
+                    team_id=entry["id"],
+                    group=group_letter,
+                    position=pos,
+                    played=entry["played"],
+                    won=entry["won"],
+                    drawn=entry["drawn"],
+                    lost=entry["lost"],
+                    goals_for=entry["gf"],
+                    goals_against=entry["ga"],
+                    points=entry["pts"],
+                ))
+            else:
+                st.group = group_letter
+                st.position = pos
+                st.played = entry["played"]
+                st.won = entry["won"]
+                st.drawn = entry["drawn"]
+                st.lost = entry["lost"]
+                st.goals_for = entry["gf"]
+                st.goals_against = entry["ga"]
+                st.points = entry["pts"]
     db.commit()
     print("Standings seeded.")
+
+
+def seed_players(db):
+    for team_id, players in PLAYER_ROSTERS.items():
+        for pdata in players:
+            existing = db.query(Player).filter(Player.id == pdata["id"]).first()
+            if existing:
+                continue
+            db.add(Player(
+                id=pdata["id"],
+                team_id=team_id,
+                name=pdata["name"],
+                position=pdata["position"],
+                overall_rating=pdata["overall_rating"],
+                pace=pdata["pace"],
+                shooting=pdata["shooting"],
+                passing=pdata["passing"],
+                dribbling=pdata["dribbling"],
+                defending=pdata["defending"],
+                physical=pdata["physical"],
+            ))
+    db.commit()
+    print("Player ratings seeded.")
 
 
 def main(match_id: int, groups_only: bool):
@@ -229,12 +338,8 @@ def main(match_id: int, groups_only: bool):
                 db.add(MatchConfig(current_match_id=match_id))
             db.commit()
 
-        if not db.query(Team).first():
-            all_team_ids = [773, 770, 8062, 8872, 804, 799, 763, 1836]
-            db.query(Standing).delete()
-            db.query(Team).filter(Team.id.in_(all_team_ids)).delete()
-            db.commit()
-            seed_standings(db)
+        seed_players(db)
+        seed_standings(db)
 
         if groups_only:
             print("\nDone! Groups and standings seeded.")
@@ -258,7 +363,23 @@ def main(match_id: int, groups_only: bool):
         ht_home = ht.get("home", 0)
         ht_away = ht.get("away", 0)
         stage = m.get("stage", "GROUP_STAGE")
-        venue = m.get("venue", "MetLife Stadium")
+        
+        # Resolve venue (API or official WC 2026 venue mapping)
+        venue_api = m.get("venue")
+        if venue_api:
+            venue = venue_api
+        elif match_id == 537390 or stage == "FINAL":
+            venue = "MetLife Stadium (New York / New Jersey)"
+        elif match_id == 537389 or stage == "THIRD_PLACE":
+            venue = "Hard Rock Stadium (Miami)"
+        elif match_id == 537388:
+            venue = "AT&T Stadium (Dallas)"
+        elif match_id == 537387:
+            venue = "Mercedes-Benz Stadium (Atlanta)"
+        elif stage == "SEMI_FINALS":
+            venue = "AT&T Stadium (Dallas)"
+        else:
+            venue = "MetLife Stadium"
         kickoff_utc_str = m.get("utcDate", "2026-07-19T19:00:00Z")
         kickoff_utc = datetime.fromisoformat(kickoff_utc_str.replace("Z", "+00:00"))
 
@@ -274,7 +395,9 @@ def main(match_id: int, groups_only: bool):
 
         for td in [home_team_data, away_team_data]:
             existing = db.query(Team).filter(Team.id == td["id"]).first()
+            elo_val = TEAM_ELOS.get(td["id"], 1800.0)
             if existing:
+                existing.pre_match_elo = elo_val
                 continue
             db.add(Team(
                 id=td["id"],
@@ -282,7 +405,7 @@ def main(match_id: int, groups_only: bool):
                 short_name=td.get("shortName", td["name"][:3].upper()),
                 flag_url="",
                 group=m.get("group", ""),
-                pre_match_elo=1800.0,
+                pre_match_elo=elo_val,
                 fc26_overall=None,
             ))
         db.commit()
