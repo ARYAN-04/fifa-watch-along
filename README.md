@@ -1,91 +1,80 @@
-# FIFA World Cup 2026 Watch-Along Dashboard
+# FIFA Hub
 
-**Real-time dashboard for the 2026 World Cup** — featuring live match events, ML-powered win probability ledger, FC 26 player ratings, replay mode controls, and pre-match context. Styled in a vintage newspaper "Broadsheet" visual design.
+Multi-league football data platform in a **single static Go binary** — live scores, league standings & fixtures, head-to-head team comparison with Elo ratings, and ML-powered win-probability curves.
 
 ## Architecture
 
 ```
-Browser ──GET /api/*──▶ Next.js API Routes (proxy, same origin)
-                              │
-                              ▼ fetch() server-to-server
-                         FastAPI API (SQLAlchemy-backed)
-                              │
-                              ▼ SQLite
+Browser ──GET /api/* or /──▶ Single Go binary (fifa-hub)
+                               │ stdlib net/http ServeMux
+                               ├── /api/* handlers → sqlc Store → SQLite (football.db)
+                               ├── poller goroutine → football-data.org (→ openfootball fallback)
+                               └── //go:embed SPA (web/dist) with index.html fallback
 ```
 
-No CORS. The browser never talks to the FastAPI backend directly. Next.js API routes act as pure pass-through proxies that forward requests to the FastAPI server.
-
-## How It Works
-
-- **Backend** (FastAPI + SQLAlchemy + SQLite) runs a background scheduler (APScheduler) that polls `football-data.org` for live match events. Goals and bookings are saved, and a calibrated `scikit-learn` ensemble classifier (Logistic Regression + Calibrated Random Forest trained on StatsBomb 2022 WC data with time-decay features) runs ML win/draw/loss inference snapshots after every match state update.
-- **Frontend** (Next.js 16 + Recharts + Tailwind v4) polls its API routes every 30s in live mode or plays back per-minute state snapshots in replay mode. Styled in the Broadsheet visual language, rendering a ticket-style scoreboard, probability ledger, goal ticker, and roster ratings.
-- **Admin** uses `sqladmin` (FastAPI-native admin panel) to configure the active match ID on match days without requiring environment variables or SSH updates.
+No CORS. Same-origin API. `DEV_MOCKS=1` serves canned datasets without any data source.
 
 ## Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | FastAPI, Uvicorn, APScheduler |
-| Database | SQLite via SQLAlchemy 2.0 |
-| Admin | SQLAdmin (session-based authentication) |
-| ML | scikit-learn (Soft-voting ensemble: Logistic Regression + Calibrated RF) |
-| Frontend | Next.js 16 (App Router), Recharts, Tailwind CSS v4, Outfit & Space Mono fonts |
-| Data | football-data.org (live), StatsBomb Open Data (training), SoFIFA (ratings) |
-| Package mgr | uv (Python 3.11) + pnpm (frontend) |
+| Backend | Go 1.27, stdlib `net/http`, sqlc + modernc.org/sqlite |
+| ML inference | Pure-Go engine over exported scikit-learn ensemble (golden parity ≤1e-6) |
+| Frontend | Vite + React 19 + TanStack Router/Query + Tailwind CSS v4 + Recharts (embedded via go:embed) |
+| Live data | football-data.org v4 (retry ×3, 429 backoff), openfootball/football.json fallback |
+| Offline tooling | uv (Python): training, model export, DB seeding, Elo computation |
 
 ## API Endpoints
 
-All exposed via Next.js API routes at `/api/*`; each proxies to FastAPI at `BACKEND_URL`.
-
-| Endpoint | Description |
-|---|---|
-| `GET /api/health` | Backend health check status |
-| `GET /api/match` | Current match state (squads, score, stage, venue) |
-| `GET /api/win-probability` | Current win/draw/loss probs + historical snapshot timeline |
-| `GET /api/events` | Match events (goals, cards, substitutions) |
-| `GET /api/players/:teamId` | FC 26 player ratings and roster details |
-| `GET /api/replay/config` | Replay mode configuration and active match ID |
-| `GET /api/replay/matches` | List of available replay matches |
-| `POST /api/replay/switch/:matchId` | Switch active replay match fixture |
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/health` | Service health status |
+| `GET` | `/api/scores/live` | Live scores across enabled leagues |
+| `GET` | `/api/leagues/{code}/standings` | League table (points, GD, form) |
+| `GET` | `/api/leagues/{code}/fixtures?season=` | Season fixtures/results (season optional) |
+| `GET` | `/api/matches/{id}` | Match metadata, status, score |
+| `GET` | `/api/matches/{id}/events` | Chronological goals/cards/subs |
+| `GET` | `/api/matches/{id}/win-probability` | Pre-match odds + in-game probability snapshots |
+| `GET` | `/api/teams/compare?home=&away=` | H2H record, avg goals, form guides, Elo |
 
 ## Local Development
 
-### 1. Backend Server
-
-Make sure python dependencies are installed and run the FastAPI server:
-
 ```bash
-# Start FastAPI backend (Port 8000)
-uv run uvicorn api.main:app --reload
+# Build everything (frontend → embedded dist → Go binary)
+make build
+
+# Run tests
+make test
+
+# Dev mode: canned mock data, no API key needed
+DEV_MOCKS=1 ./bin/fifa-hub
+
+# Live mode: needs football-data.org key (free at football-data.org/client)
+FOOTBALL_DATA_API_KEY=your_key ./bin/fifa-hub
 ```
 
-Open `http://localhost:8000/admin` to access the SQLAdmin panel (default: `admin` / `admin`).
+Environment variables: `PORT` (8080), `DB_PATH` (`football.db`), `POLL_INTERVAL_SECONDS` (15), `FOOTBALL_DATA_API_KEY`, `DEV_MOCKS`. See `.env.example`.
 
-### 2. Seed Replay Matches
-
-Seed the local SQLite database with WC 2026 knockout matches and ML win probability snapshots:
+### Web SPA development
 
 ```bash
-# Seed local database with replay matches
-uv run python scripts/seed_replay_match.py
+cd web && pnpm install && pnpm dev   # Vite dev server on :5173, proxies /api → :8080
 ```
 
-### 3. Next.js Frontend
-
-Run the Next.js development server:
+### Offline Python tooling (uv)
 
 ```bash
-# Start Next.js (Port 3000)
-pnpm --dir frontend dev
+uv run python data_pipeline/seed_football_db.py   # seed multi-league football.db
+uv run python data_pipeline/compute_elo.py        # recompute Elo from finished matches
+uv run python ml/export_model.py                  # re-export sklearn model → ml/export/model.json
 ```
 
-*Note: The frontend works standalone with built-in mock fallback data if the backend is down (e.g., mock Argentina vs Canada).*
+## Data Pipeline
 
-## Running Tests
+- **Seeding:** 5 Premier League seasons from [openfootball/football.json](https://github.com/openfootball/football.json) + legacy WC2026 knockout data, with team name-matching against the frozen [Reep v0 register](https://github.com/withqwerty/reep) for provider ID crosswalks.
+- **Elo:** computed offline from all finished matches (World-Football-Elo style, K=20, goal-diff multiplier); stored in `elo_ratings`.
+- **ML:** soft-voting ensemble (Scaled Logistic Regression + Calibrated Random Forest) trained offline on StatsBomb WC2022 game states; exported to JSON and evaluated by a hand-rolled Go tree/sigmoid engine verified to machine precision against Python.
 
-The backend includes a comprehensive test suite using `pytest` and `httpx` to verify all routers, database sessions, and background polling/inference functions:
+## Project Status
 
-```bash
-# Run backend test suite
-PYTHONPATH=. uv run pytest
-```
+Go port complete. Only the Premier League is enabled pending live provider verification; UCL / La Liga / Serie A / Bundesliga / WC2026 are seeded but disabled until their football-data.org coverage is validated.

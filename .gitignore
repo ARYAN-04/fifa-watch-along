@@ -35,11 +35,6 @@ plan.html
 
 # Node / frontend
 node_modules/
-frontend/dist/
-
-# Django
-staticfiles/
-*.mo
 
 # Go
 /bin/
