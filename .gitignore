@@ -40,3 +40,8 @@ frontend/dist/
 # Django
 staticfiles/
 *.mo
+
+# Go
+/bin/
+fifa-hub
+internal/web/dist/
