@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/fifa-watch-along/fifa-hub/internal/store"
 	"github.com/fifa-watch-along/fifa-hub/internal/store/db"
@@ -147,7 +148,7 @@ func buildFixtures(ctx context.Context, st *store.Store, comp db.Competition, se
 }
 
 func lookupCompetition(ctx context.Context, st *store.Store, code string) (db.Competition, error) {
-	comp, err := st.GetCompetitionByCode(ctx, code)
+	comp, err := st.GetCompetitionByCode(ctx, strings.ToUpper(code))
 	if errors.Is(err, sql.ErrNoRows) {
 		return db.Competition{}, errUnknownLeague
 	}

@@ -19,6 +19,13 @@ func Register(mux *http.ServeMux, d Deps) {
 		mux.HandleFunc("GET /api/scores/live", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, mockLiveScores())
 		})
+		mux.HandleFunc("GET /api/leagues/{leagueId}/standings", handleMockStandings)
+		mux.HandleFunc("GET /api/leagues/{leagueId}/fixtures", handleMockFixtures)
+		mux.HandleFunc("GET /api/matches/{id}", handleMockMatch)
+		mux.HandleFunc("GET /api/matches/{id}/events", handleMockMatchEvents)
+		mux.HandleFunc("GET /api/matches/{id}/win-probability", handleMockWinProbability)
+		mux.HandleFunc("GET /api/teams/compare", handleMockCompare)
+		mux.HandleFunc("GET /api/replay/matches", handleMockReplayMatches)
 		return
 	}
 	mux.HandleFunc("GET /api/scores/live", handleLiveScores(d.Store))
@@ -28,6 +35,7 @@ func Register(mux *http.ServeMux, d Deps) {
 	mux.HandleFunc("GET /api/matches/{id}/win-probability", handleWinProbability(d.Store))
 	mux.HandleFunc("GET /api/leagues/{leagueId}/standings", handleLeagueStandings(d.Store))
 	mux.HandleFunc("GET /api/leagues/{leagueId}/fixtures", handleLeagueFixtures(d.Store))
+	mux.HandleFunc("GET /api/replay/matches", handleReplayMatches(d.Store))
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

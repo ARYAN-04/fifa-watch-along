@@ -131,24 +131,23 @@ func applyMatch(ctx context.Context, d Deps, seen map[string]matchState, competi
 		}
 	}
 	seen[m.ExternalID] = cur
-	if err := recordSnapshot(ctx, d.Predict, q, row); err != nil {
+	if err := recordSnapshot(ctx, d.Store, d.Predict, row); err != nil {
 		return fmt.Errorf("win prob snapshot: %w", err)
 	}
 	return nil
 }
 
-func recordSnapshot(ctx context.Context, predict func([10]float64) ([3]float64, error), q *db.Queries, row db.Match) error {
+func recordSnapshot(ctx context.Context, st *store.Store, predict func([10]float64) ([3]float64, error), row db.Match) error {
 	if predict == nil || row.Status != "LIVE" || !row.Minute.Valid {
 		return nil
 	}
-	existing, err := q.ListWinProbSnapshotsByMatch(ctx, row.ID)
+	q := st.Queries
+	exists, err := st.WinProbSnapshotExists(ctx, row.ID, row.Minute.Int64)
 	if err != nil {
-		return fmt.Errorf("list snapshots: %w", err)
+		return fmt.Errorf("snapshot exists check: %w", err)
 	}
-	for _, s := range existing {
-		if s.Minute == row.Minute.Int64 {
-			return nil
-		}
+	if exists {
+		return nil
 	}
 	feats := inference.BuildFeatures(
 		float64(nullInt64Val(row.HomeGoals)),
@@ -170,10 +169,15 @@ func recordSnapshot(ctx context.Context, predict func([10]float64) ([3]float64, 
 	})
 }
 
+// fallbackElo is used when a team has no rating row. It matches the
+// default in inference.BuildFeatures, stated explicitly so the poller
+// doesn't rely on 0 meaning "unrated".
+const fallbackElo = 1500.0
+
 func eloOf(ctx context.Context, q *db.Queries, teamID int64) float64 {
 	rating, err := q.GetEloRating(ctx, teamID)
 	if err != nil {
-		return 0
+		return fallbackElo
 	}
 	return rating.Rating
 }

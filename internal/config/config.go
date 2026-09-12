@@ -19,22 +19,13 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{}
 
-	port, err := envOr("PORT", "8080")
-	if err != nil {
-		return Config{}, err
-	}
+	port := envOr("PORT", "8080")
 	cfg.Port = port
 
-	dbPath, err := envOr("DB_PATH", "football.db")
-	if err != nil {
-		return Config{}, err
-	}
+	dbPath := envOr("DB_PATH", "football.db")
 	cfg.DBPath = dbPath
 
-	seconds, err := envOr("POLL_INTERVAL_SECONDS", "15")
-	if err != nil {
-		return Config{}, err
-	}
+	seconds := envOr("POLL_INTERVAL_SECONDS", "15")
 	n, err := strconv.Atoi(seconds)
 	if err != nil {
 		return Config{}, fmt.Errorf("POLL_INTERVAL_SECONDS: %w", err)
@@ -58,10 +49,9 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-func envOr(key, fallback string) (string, error) {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback, nil
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	return v, nil
+	return fallback
 }
