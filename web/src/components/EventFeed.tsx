@@ -1,18 +1,22 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRightLeft, Goal, Square } from 'lucide-react'
 import { api, type MatchEvent } from '../lib/api'
 
-function EventIcon({ event }: { event: MatchEvent }) {
-  switch (event.type) {
-    case 'GOAL':
-      return <Goal className="h-4 w-4 text-emerald-400" />
-    case 'CARD':
-      return <Square className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-    case 'SUB':
-      return <ArrowRightLeft className="h-4 w-4 text-sky-400" />
-    default:
-      return <span className="text-xs text-zinc-500">{event.type}</span>
-  }
+const eventEmoji: Record<string, string> = {
+  GOAL: '⚽',
+  YELLOW_CARD: '🟨',
+  CARD: '🟨',
+  RED_CARD: '🟥',
+  SUBSTITUTION: '🔄',
+  SUB: '🔄',
+}
+
+const eventLabel: Record<string, string> = {
+  GOAL: 'Goal',
+  YELLOW_CARD: 'Yellow Card',
+  CARD: 'Card',
+  RED_CARD: 'Red Card',
+  SUBSTITUTION: 'Substitution',
+  SUB: 'Substitution',
 }
 
 function EventRow({
@@ -27,21 +31,16 @@ function EventRow({
   const isHome = event.side.toUpperCase() === 'HOME'
   const team = isHome ? homeName : awayName
   return (
-    <li
-      className={`flex items-center gap-3 border-t border-zinc-800/60 px-4 py-2 ${
-        isHome ? '' : 'flex-row-reverse text-right'
-      }`}
-    >
-      <span className="w-8 shrink-0 tabular-nums text-xs text-zinc-500">{event.minute}'</span>
-      <EventIcon event={event} />
-      <div className={isHome ? '' : 'flex-1'}>
-        <span className="text-sm font-medium text-zinc-200">{event.player}</span>{' '}
-        <span className="text-xs text-zinc-500">
-          {team}
-          {event.detail ? ` · ${event.detail}` : ''}
+    <li className="grid grid-cols-[40px_1fr] gap-3 py-3 font-mono text-xs">
+      <span className="font-serif text-base font-bold text-brick">{event.minute}&apos;</span>
+      <div>
+        <span>{eventEmoji[event.type] ?? '•'}</span>{' '}
+        <span className="font-serif text-sm font-bold">{event.player ?? 'Unknown'}</span>{' '}
+        <span className="text-[10px] uppercase tracking-wider text-muted-brown">
+          {eventLabel[event.type] ?? event.type} ({team})
         </span>
+        {event.detail ? <div className="mt-1 text-[10px] text-muted-brown">{event.detail}</div> : null}
       </div>
-      {isHome && <div className="flex-1" />}
     </li>
   )
 }
@@ -50,10 +49,12 @@ export function EventFeed({
   matchId,
   homeName,
   awayName,
+  upto = null,
 }: {
   matchId: number
   homeName: string
   awayName: string
+  upto?: number | null
 }) {
   const { data, isPending, isError } = useQuery({
     queryKey: ['matchEvents', matchId],
@@ -62,31 +63,29 @@ export function EventFeed({
   })
 
   if (isPending) {
-    return <div className="h-32 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900" />
+    return <div className="h-32 animate-pulse border border-ink bg-paper2/30" />
   }
 
   if (isError || !data) {
     return (
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
+      <div className="border border-ink bg-paper2/30 p-6 font-mono text-sm text-muted-brown">
         Failed to load events.
       </div>
     )
   }
 
+  const visible = upto == null ? data.events : data.events.filter((e) => e.minute <= upto)
+  const sorted = [...visible].sort((a, b) => b.minute - a.minute)
+
+  if (sorted.length === 0) {
+    return <div className="py-8 text-center font-mono text-sm text-muted-brown">No events yet</div>
+  }
+
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900">
-      <h3 className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold uppercase tracking-widest text-zinc-400">
-        Events
-      </h3>
-      {data.events.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-zinc-400">No events recorded.</p>
-      ) : (
-        <ul>
-          {data.events.map((e, i) => (
-            <EventRow key={`${e.minute}-${e.type}-${i}`} event={e} homeName={homeName} awayName={awayName} />
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="divide-y divide-dotted divide-rule">
+      {sorted.map((e, i) => (
+        <EventRow key={`${e.minute}-${e.type}-${i}`} event={e} homeName={homeName} awayName={awayName} />
+      ))}
+    </ul>
   )
 }

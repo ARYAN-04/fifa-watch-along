@@ -134,6 +134,23 @@ export interface TeamCompareResponse {
   }
 }
 
+export interface ReplayMatchRow {
+  id: number
+  league: string
+  season: string
+  kickoff: string
+  status: string
+  home: { id: number; name: string }
+  away: { id: number; name: string }
+  homeGoals: number | null
+  awayGoals: number | null
+  snapshots: number
+}
+
+export interface ReplayMatchesResponse {
+  matches: ReplayMatchRow[]
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
@@ -157,4 +174,5 @@ export const api = {
     getJson<WinProbabilityResponse>(`/api/matches/${id}/win-probability`),
   getTeamCompare: (homeId: number, awayId: number) =>
     getJson<TeamCompareResponse>(`/api/teams/compare?home=${homeId}&away=${awayId}`),
+  getReplayMatches: () => getJson<ReplayMatchesResponse>('/api/replay/matches'),
 }

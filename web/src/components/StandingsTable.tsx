@@ -1,13 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { Trophy } from 'lucide-react'
 import { api, type StandingRow } from '../lib/api'
 
 function FormCell({ row }: { row: StandingRow }) {
   const top4 = row.position <= 4
   return (
-    <td
-      className={`px-2 py-1.5 text-right tabular-nums ${top4 ? 'text-emerald-400' : 'text-zinc-300'}`}
-    >
+    <td className={`px-2 py-1.5 text-right tabular-nums ${top4 ? 'font-bold text-ink' : ''}`}>
       {row.points}
     </td>
   )
@@ -21,30 +18,25 @@ export function StandingsTable({ leagueId }: { leagueId: string }) {
   })
 
   if (isPending) {
-    return (
-      <div className="h-64 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900" />
-    )
+    return <div className="h-64 animate-pulse border border-ink bg-paper2/30" />
   }
 
   if (isError || !data) {
     return (
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
+      <div className="border border-ink bg-paper2/30 p-6 font-mono text-sm text-muted-brown">
         Failed to load standings.
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900">
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-        <Trophy className="h-4 w-4 text-zinc-500" />
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-400">
-          Standings · {data.season}
-        </h2>
-      </div>
-      <table className="w-full text-sm">
+    <div className="border border-ink bg-paper">
+      <h2 className="border-b border-ink px-4 py-3 font-serif text-lg font-bold">
+        Standings · {data.season}
+      </h2>
+      <table className="w-full font-mono text-sm">
         <thead>
-          <tr className="text-xs uppercase tracking-wider text-zinc-500">
+          <tr className="text-xs uppercase tracking-wider text-muted-brown">
             <th className="px-3 py-2 text-left font-medium">#</th>
             <th className="px-2 py-2 text-left font-medium">Team</th>
             <th className="px-2 py-2 text-right font-medium">P</th>
@@ -59,20 +51,20 @@ export function StandingsTable({ leagueId }: { leagueId: string }) {
         </thead>
         <tbody>
           {data.standings.map((row) => (
-            <tr key={row.team.id} className="border-t border-zinc-800/60 hover:bg-zinc-800/40">
-              <td className="px-3 py-1.5 tabular-nums text-zinc-500">{row.position}</td>
-              <td className="px-2 py-1.5 text-zinc-200">{row.team.name}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-zinc-300">{row.played}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-zinc-300">{row.won}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-zinc-300">{row.drawn}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-zinc-300">{row.lost}</td>
-              <td className="hidden px-2 py-1.5 text-right tabular-nums text-zinc-500 sm:table-cell">
+            <tr key={row.team.id} className="border-t border-rule/60">
+              <td className="px-3 py-1.5 tabular-nums text-muted-brown">{row.position}</td>
+              <td className="px-2 py-1.5 font-bold">{row.team.name}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{row.played}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{row.won}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{row.drawn}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{row.lost}</td>
+              <td className="hidden px-2 py-1.5 text-right tabular-nums text-muted-brown sm:table-cell">
                 {row.gf}
               </td>
-              <td className="hidden px-2 py-1.5 text-right tabular-nums text-zinc-500 sm:table-cell">
+              <td className="hidden px-2 py-1.5 text-right tabular-nums text-muted-brown sm:table-cell">
                 {row.ga}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-zinc-300">
+              <td className="px-2 py-1.5 text-right tabular-nums">
                 {row.gd > 0 ? `+${row.gd}` : row.gd}
               </td>
               <FormCell row={row} />
