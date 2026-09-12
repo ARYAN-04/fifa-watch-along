@@ -1,36 +1,121 @@
 """
-Seed database with one completed WC 2026 match and generate a realistic
-event timeline + per-minute win probability snapshots for replay.
+Seed wc2026.db with a completed WC 2026 match plus a realistic event
+timeline and per-minute win probability snapshots for replay.
+
+Stage 1 of the replay pipeline: this writes the legacy dashboard_* schema,
+and data_pipeline/seed_football_db.py maps it read-only into football.db
+via import_legacy. Run one match per invocation.
 
 Usage:
-  uv run python scripts/seed_replay_match.py                                  # France 4-6 England (default)
-  uv run python scripts/seed_replay_match.py --match-id 537390                 # Final: Spain 1-0 Argentina
-  uv run python scripts/seed_replay_match.py --groups-only                     # Just seed group teams/standings
+  uv run scripts/seed_replay_match.py                        # France 4-6 England (default)
+  uv run scripts/seed_replay_match.py --match-id 537390      # Final: Spain 1-0 Argentina
+  uv run scripts/seed_replay_match.py --groups-only          # Just seed group teams/standings
+
+Needs FOOTBALL_DATA_API_KEY in the environment or .env (skipped for --groups-only).
 """
-import os
-import sys
 import argparse
-import requests
+import json
 import random
+import sqlite3
+import sys
+import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "ml"))
 
-from dotenv import load_dotenv
-dotenv_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-load_dotenv(dotenv_path)
+from features import build_game_state_features  # noqa: E402
 
-from api.db import SessionLocal, engine
-from api.models import Base
-from api.models import Team, Player, Match, MatchEvent, MatchConfig, Standing, WinProbabilitySnapshot
-from api.services.inference import get_model
-from ml.features import build_game_state_features
+import joblib  # noqa: E402
 
-FD_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
-FD_HEADERS = {"X-Auth-Token": FD_API_KEY}
+DB_PATH = ROOT / "wc2026.db"
+MODEL_PATH = ROOT / "ml" / "win_prob_model.pkl"
 FD_BASE = "https://api.football-data.org/v4"
 
 DEFAULT_MATCH_ID = 537389
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS dashboard_team (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    short_name TEXT DEFAULT '',
+    flag_url TEXT DEFAULT '',
+    "group" TEXT DEFAULT '',
+    pre_match_elo REAL DEFAULT 1500.0,
+    fc26_overall INTEGER NULL
+);
+CREATE TABLE IF NOT EXISTS dashboard_player (
+    id INTEGER PRIMARY KEY,
+    team_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    position TEXT DEFAULT '',
+    overall_rating INTEGER DEFAULT 0,
+    pace INTEGER DEFAULT 0,
+    shooting INTEGER DEFAULT 0,
+    passing INTEGER DEFAULT 0,
+    dribbling INTEGER DEFAULT 0,
+    defending INTEGER DEFAULT 0,
+    physical INTEGER DEFAULT 0,
+    skill_moves INTEGER DEFAULT 0,
+    weak_foot INTEGER DEFAULT 0,
+    nationality TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS dashboard_match (
+    id INTEGER PRIMARY KEY,
+    home_team_id INTEGER NOT NULL,
+    away_team_id INTEGER NOT NULL,
+    kickoff_utc TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    venue TEXT DEFAULT '',
+    status TEXT DEFAULT 'SCHEDULED',
+    home_score INTEGER DEFAULT 0,
+    away_score INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS dashboard_matchevent (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id INTEGER NOT NULL,
+    minute INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    team_id INTEGER NULL,
+    player_name TEXT NOT NULL,
+    assist_name TEXT DEFAULT '',
+    detail TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE (match_id, minute, event_type, player_name)
+);
+CREATE TABLE IF NOT EXISTS dashboard_winprobabilitysnapshot (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id INTEGER NOT NULL,
+    minute INTEGER NOT NULL,
+    home_win_prob REAL NOT NULL,
+    draw_prob REAL NOT NULL,
+    away_win_prob REAL NOT NULL,
+    score_diff INTEGER NOT NULL,
+    xg_diff_approx REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dashboard_standing (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL,
+    "group" TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    played INTEGER DEFAULT 0,
+    won INTEGER DEFAULT 0,
+    drawn INTEGER DEFAULT 0,
+    lost INTEGER DEFAULT 0,
+    goals_for INTEGER DEFAULT 0,
+    goals_against INTEGER DEFAULT 0,
+    points INTEGER DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    UNIQUE (team_id, "group")
+);
+CREATE TABLE IF NOT EXISTS dashboard_matchconfig (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    current_match_id INTEGER NULL,
+    updated_at TEXT NOT NULL
+);
+"""
 
 KNOWN_EVENTS = {
     537389: {
@@ -95,70 +180,54 @@ STANDINGS_TEMPLATE = {
 
 
 def generate_events(home_score: int, away_score: int, ht_home: int, ht_away: int) -> dict:
-    home_name_short = "H"
-    away_name_short = "A"
-
     goals = []
     yellow_cards = []
     red_cards = []
     substitutions = []
 
-    first_half_goals_home = ht_home
-    first_half_goals_away = ht_away
-    second_half_goals_home = home_score - ht_home
-    second_half_goals_away = away_score - ht_away
-
     first_half_slots = [8, 18, 25, 32, 38, 42, 45]
     second_half_slots = [48, 55, 62, 68, 75, 82, 88]
-    stoppage_slots = [90]
 
     random.shuffle(first_half_slots)
     random.shuffle(second_half_slots)
 
-    home_first = first_half_goals_home + second_half_goals_home + (1 if home_score > 4 else 0)
-    away_first = first_half_goals_away + second_half_goals_away + (1 if away_score > 4 else 0)
-
     idx = 0
-    for _ in range(first_half_goals_home):
+    for _ in range(ht_home):
         if idx < len(first_half_slots):
-            goals.append({"minute": first_half_slots[idx], "team": "home", "player": f"Player {home_name_short}{idx+1}"})
+            goals.append({"minute": first_half_slots[idx], "team": "home", "player": f"Player H{idx+1}"})
             idx += 1
     idx = 0
-    for _ in range(first_half_goals_away):
+    for _ in range(ht_away):
         if idx < len(first_half_slots):
-            goals.append({"minute": first_half_slots[len(first_half_slots)-1-idx], "team": "away", "player": f"Player {away_name_short}{idx+1}"})
+            goals.append({"minute": first_half_slots[len(first_half_slots)-1-idx], "team": "away", "player": f"Player A{idx+1}"})
             idx += 1
 
     idx = 0
-    for _ in range(second_half_goals_home):
+    for _ in range(home_score - ht_home):
         if idx < len(second_half_slots):
-            goals.append({"minute": second_half_slots[idx], "team": "home", "player": f"Player {home_name_short}{idx+1}"})
+            goals.append({"minute": second_half_slots[idx], "team": "home", "player": f"Player H{idx+1}"})
             idx += 1
     idx = 0
-    for _ in range(second_half_goals_away):
+    for _ in range(away_score - ht_away):
         if idx < len(second_half_slots):
-            goals.append({"minute": second_half_slots[len(second_half_slots)-1-idx], "team": "away", "player": f"Player {away_name_short}{idx+1}"})
+            goals.append({"minute": second_half_slots[len(second_half_slots)-1-idx], "team": "away", "player": f"Player A{idx+1}"})
             idx += 1
 
-    extra_goals_home = max(0, second_half_goals_home - len(second_half_slots))
-    extra_goals_away = max(0, second_half_goals_away - len(second_half_slots))
-    for i in range(extra_goals_home):
+    extra_home = max(0, home_score - ht_home - len(second_half_slots))
+    extra_away = max(0, away_score - ht_away - len(second_half_slots))
+    for i in range(extra_home):
         goals.append({"minute": 90, "stoppage": i + 1, "team": "home", "player": f"Player H-ET{i+1}"})
-    for i in range(extra_goals_away):
+    for i in range(extra_away):
         goals.append({"minute": 90, "stoppage": i + 1, "team": "away", "player": f"Player A-ET{i+1}"})
 
-    card_slots = [15, 30, 40, 50, 65, 80]
-    num_yellows = min(5, len(card_slots))
-    for i in range(num_yellows):
+    for i in range(min(5, 6)):
         team = "home" if i % 2 == 0 else "away"
-        yellow_cards.append({"minute": card_slots[i], "team": team, "player": f"Player {team.upper()}-YC{i+1}"})
+        yellow_cards.append({"minute": [15, 30, 40, 50, 65, 80][i], "team": team, "player": f"Player {team.upper()}-YC{i+1}"})
 
-    sub_slots = [55, 65, 70, 75, 80, 85]
-    num_subs = min(6, len(sub_slots))
-    for i in range(num_subs):
+    for i in range(min(6, 6)):
         team = "home" if i % 2 == 0 else "away"
         substitutions.append({
-            "minute": sub_slots[i], "team": team,
+            "minute": [55, 65, 70, 75, 80, 85][i], "team": team,
             "player_off": f"P. {team.upper()}-Off{i+1}",
             "player_on": f"P. {team.upper()}-On{i+1}",
         })
@@ -172,12 +241,11 @@ def generate_events(home_score: int, away_score: int, ht_home: int, ht_away: int
     }
 
 
-def get_score_at_minute(minute: int, goals: list) -> tuple[int, int]:
+def get_score_at_minute(minute: int, goals: list) -> tuple:
     home = 0
     away = 0
     for g in goals:
-        m = g["minute"] + g.get("stoppage", 0)
-        if m <= minute:
+        if g["minute"] + g.get("stoppage", 0) <= minute:
             if g["team"] == "home":
                 home += 1
             else:
@@ -185,12 +253,10 @@ def get_score_at_minute(minute: int, goals: list) -> tuple[int, int]:
     return home, away
 
 
-def get_elo_diff_for_teams(home_team_id: int, away_team_id: int, db) -> float:
-    home_team = db.query(Team).filter(Team.id == home_team_id).first()
-    away_team = db.query(Team).filter(Team.id == away_team_id).first()
-    home_elo = home_team.pre_match_elo if home_team else 1500.0
-    away_elo = away_team.pre_match_elo if away_team else 1500.0
-    return home_elo - away_elo
+def get_elo_diff(conn, home_team_id: int, away_team_id: int) -> float:
+    home = conn.execute("SELECT pre_match_elo FROM dashboard_team WHERE id = ?", (home_team_id,)).fetchone()
+    away = conn.execute("SELECT pre_match_elo FROM dashboard_team WHERE id = ?", (away_team_id,)).fetchone()
+    return (home[0] if home else 1500.0) - (away[0] if away else 1500.0)
 
 
 PLAYER_ROSTERS = {
@@ -231,7 +297,7 @@ PLAYER_ROSTERS = {
         {"id": 76008, "name": "Dani Olmo", "position": "CAM", "overall_rating": 85, "pace": 78, "shooting": 82, "passing": 84, "dribbling": 86, "defending": 52, "physical": 66},
         {"id": 76009, "name": "Lamine Yamal", "position": "RW", "overall_rating": 87, "pace": 90, "shooting": 82, "passing": 85, "dribbling": 91, "defending": 42, "physical": 60},
         {"id": 76010, "name": "N. Williams", "position": "LW", "overall_rating": 85, "pace": 93, "shooting": 78, "passing": 79, "dribbling": 87, "defending": 45, "physical": 68},
-        {"id": 76011, "name": "A. Morata", "position": "ST", "overall_rating": 83, "pace": 81, "shooting": 82, "passing": 72, "dribbling": 78, "defending": 35, "physical": 76},
+        {"id": 76011, "name": "A. Morata", "position": "ST", "overall_rating": 83, "pace": 81, "shooting": 82, "passing": 72, "dribbling": 78, "defending": 35, "physical": 78},
     ],
     762: [  # Argentina
         {"id": 76201, "name": "E. Martínez", "position": "GK", "overall_rating": 87, "pace": 85, "shooting": 82, "passing": 85, "dribbling": 85, "defending": 86, "physical": 87},
@@ -249,97 +315,103 @@ PLAYER_ROSTERS = {
 }
 
 
-def seed_standings(db):
+def seed_standings(conn):
+    now = datetime.now(timezone.utc).isoformat()
     for group_letter, entries in STANDINGS_TEMPLATE.items():
         for pos, entry in enumerate(entries, 1):
-            existing = db.query(Team).filter(Team.id == entry["id"]).first()
             elo_val = TEAM_ELOS.get(entry["id"], 1800.0)
-            if not existing:
-                db.add(Team(
-                    id=entry["id"],
-                    name=entry["name"],
-                    short_name=entry["name"][:3].upper(),
-                    group=f"GROUP_{group_letter}",
-                    pre_match_elo=elo_val,
-                ))
-            else:
-                existing.pre_match_elo = elo_val
-
-            st = db.query(Standing).filter(Standing.team_id == entry["id"]).first()
-            if not st:
-                db.add(Standing(
-                    team_id=entry["id"],
-                    group=group_letter,
-                    position=pos,
-                    played=entry["played"],
-                    won=entry["won"],
-                    drawn=entry["drawn"],
-                    lost=entry["lost"],
-                    goals_for=entry["gf"],
-                    goals_against=entry["ga"],
-                    points=entry["pts"],
-                ))
-            else:
-                st.group = group_letter
-                st.position = pos
-                st.played = entry["played"]
-                st.won = entry["won"]
-                st.drawn = entry["drawn"]
-                st.lost = entry["lost"]
-                st.goals_for = entry["gf"]
-                st.goals_against = entry["ga"]
-                st.points = entry["pts"]
-    db.commit()
+            conn.execute(
+                """INSERT INTO dashboard_team (id, name, short_name, "group", pre_match_elo)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET pre_match_elo = excluded.pre_match_elo""",
+                (entry["id"], entry["name"], entry["name"][:3].upper(), f"GROUP_{group_letter}", elo_val),
+            )
+            conn.execute(
+                """INSERT INTO dashboard_standing
+                   (team_id, "group", position, played, won, drawn, lost, goals_for, goals_against, points, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(team_id, "group") DO UPDATE SET
+                       position = excluded.position, played = excluded.played, won = excluded.won,
+                       drawn = excluded.drawn, lost = excluded.lost, goals_for = excluded.goals_for,
+                       goals_against = excluded.goals_against, points = excluded.points""",
+                (entry["id"], group_letter, pos, entry["played"], entry["won"], entry["drawn"],
+                 entry["lost"], entry["gf"], entry["ga"], entry["pts"], now),
+            )
+    conn.commit()
     print("Standings seeded.")
 
 
-def seed_players(db):
+def seed_players(conn):
     for team_id, players in PLAYER_ROSTERS.items():
         for pdata in players:
-            existing = db.query(Player).filter(Player.id == pdata["id"]).first()
-            if existing:
-                continue
-            db.add(Player(
-                id=pdata["id"],
-                team_id=team_id,
-                name=pdata["name"],
-                position=pdata["position"],
-                overall_rating=pdata["overall_rating"],
-                pace=pdata["pace"],
-                shooting=pdata["shooting"],
-                passing=pdata["passing"],
-                dribbling=pdata["dribbling"],
-                defending=pdata["defending"],
-                physical=pdata["physical"],
-            ))
-    db.commit()
+            conn.execute(
+                """INSERT INTO dashboard_player
+                   (id, team_id, name, position, overall_rating, pace, shooting, passing,
+                    dribbling, defending, physical)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO NOTHING""",
+                (pdata["id"], team_id, pdata["name"], pdata["position"], pdata["overall_rating"],
+                 pdata["pace"], pdata["shooting"], pdata["passing"], pdata["dribbling"],
+                 pdata["defending"], pdata["physical"]),
+            )
+    conn.commit()
     print("Player ratings seeded.")
 
 
-def main(match_id: int, groups_only: bool):
-    if not FD_API_KEY:
-        print("FOOTBALL_DATA_API_KEY not set in .env")
-        return
-
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+def load_dotenv(path: Path):
+    import os
 
     try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+def fd_get(api_key: str, path: str):
+    req = urllib.request.Request(
+        f"{FD_BASE}{path}", headers={"X-Auth-Token": api_key}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp)
+
+
+def main(match_id: int, groups_only: bool):
+    import os
+
+    load_dotenv(ROOT / ".env")
+    api_key = os.getenv("FOOTBALL_DATA_API_KEY")
+    if not api_key and not groups_only:
+        print("FOOTBALL_DATA_API_KEY not set in environment or .env")
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.executescript(SCHEMA)
+
         if not groups_only:
-            db.query(WinProbabilitySnapshot).filter(WinProbabilitySnapshot.match_id == match_id).delete()
-            db.query(MatchEvent).filter(MatchEvent.match_id == match_id).delete()
-            db.query(Match).filter(Match.id == match_id).delete()
-            db.commit()
+            conn.execute("DELETE FROM dashboard_winprobabilitysnapshot WHERE match_id = ?", (match_id,))
+            conn.execute("DELETE FROM dashboard_matchevent WHERE match_id = ?", (match_id,))
+            conn.execute("DELETE FROM dashboard_match WHERE id = ?", (match_id,))
+            conn.commit()
 
-            existing_config = db.query(MatchConfig).first()
-            if existing_config:
-                existing_config.current_match_id = match_id
+            row = conn.execute("SELECT id FROM dashboard_matchconfig LIMIT 1").fetchone()
+            now = datetime.now(timezone.utc).isoformat()
+            if row:
+                conn.execute("UPDATE dashboard_matchconfig SET current_match_id = ?, updated_at = ? WHERE id = ?",
+                             (match_id, now, row[0]))
             else:
-                db.add(MatchConfig(current_match_id=match_id))
-            db.commit()
+                conn.execute("INSERT INTO dashboard_matchconfig (current_match_id, updated_at) VALUES (?, ?)",
+                             (match_id, now))
+            conn.commit()
 
-        seed_players(db)
-        seed_standings(db)
+        seed_players(conn)
+        seed_standings(conn)
 
         if groups_only:
             print("\nDone! Groups and standings seeded.")
@@ -347,12 +419,12 @@ def main(match_id: int, groups_only: bool):
             return
 
         print(f"Fetching match {match_id} from football-data.org...")
-        resp = requests.get(f"{FD_BASE}/matches/{match_id}", headers=FD_HEADERS)
-        if resp.status_code != 200:
-            print(f"API error: {resp.status_code} — {resp.text[:200]}")
+        try:
+            m = fd_get(api_key, f"/matches/{match_id}")
+        except Exception as e:
+            print(f"API error: {e}")
             return
 
-        m = resp.json()
         home_team_data = m["homeTeam"]
         away_team_data = m["awayTeam"]
         score = m["score"]
@@ -363,8 +435,7 @@ def main(match_id: int, groups_only: bool):
         ht_home = ht.get("home", 0)
         ht_away = ht.get("away", 0)
         stage = m.get("stage", "GROUP_STAGE")
-        
-        # Resolve venue (API or official WC 2026 venue mapping)
+
         venue_api = m.get("venue")
         if venue_api:
             venue = venue_api
@@ -380,8 +451,7 @@ def main(match_id: int, groups_only: bool):
             venue = "AT&T Stadium (Dallas)"
         else:
             venue = "MetLife Stadium"
-        kickoff_utc_str = m.get("utcDate", "2026-07-19T19:00:00Z")
-        kickoff_utc = datetime.fromisoformat(kickoff_utc_str.replace("Z", "+00:00"))
+        kickoff_utc = m.get("utcDate", "2026-07-19T19:00:00Z").replace("Z", "").replace("T", " ")
 
         print(f"Match: {home_team_data['name']} {home_score} vs {away_score} {away_team_data['name']}")
         print(f"  Stage: {stage}  |  HT: {ht_home}-{ht_away}  |  Venue: {venue}")
@@ -394,92 +464,70 @@ def main(match_id: int, groups_only: bool):
             print("  Generating event timeline from scoreline.")
 
         for td in [home_team_data, away_team_data]:
-            existing = db.query(Team).filter(Team.id == td["id"]).first()
             elo_val = TEAM_ELOS.get(td["id"], 1800.0)
-            if existing:
-                existing.pre_match_elo = elo_val
-                continue
-            db.add(Team(
-                id=td["id"],
-                name=td["name"],
-                short_name=td.get("shortName", td["name"][:3].upper()),
-                flag_url="",
-                group=m.get("group", ""),
-                pre_match_elo=elo_val,
-                fc26_overall=None,
-            ))
-        db.commit()
+            conn.execute(
+                """INSERT INTO dashboard_team (id, name, short_name, pre_match_elo)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET pre_match_elo = excluded.pre_match_elo""",
+                (td["id"], td["name"], td.get("shortName", td["name"][:3].upper()), elo_val),
+            )
+        conn.commit()
         print("Teams seeded.")
 
-        match = Match(
-            id=match_id,
-            home_team_id=home_team_data["id"],
-            away_team_id=away_team_data["id"],
-            kickoff_utc=kickoff_utc,
-            stage=stage,
-            venue=venue or "MetLife Stadium",
-            status="FINISHED",
-            home_score=home_score,
-            away_score=away_score,
+        conn.execute(
+            """INSERT INTO dashboard_match
+               (id, home_team_id, away_team_id, kickoff_utc, stage, venue, status, home_score, away_score)
+               VALUES (?, ?, ?, ?, ?, ?, 'FINISHED', ?, ?)""",
+            (match_id, home_team_data["id"], away_team_data["id"], kickoff_utc,
+             stage, venue or "MetLife Stadium", home_score, away_score),
         )
-        db.add(match)
-        db.commit()
+        conn.commit()
         print("Match seeded.")
 
+        now = datetime.now(timezone.utc).isoformat()
         for evt in events["yellow_cards"]:
             team_id = home_team_data["id"] if evt["team"] == "home" else away_team_data["id"]
-            db.add(MatchEvent(
-                match_id=match_id,
-                minute=evt["minute"],
-                event_type="YELLOW_CARD",
-                team_id=team_id,
-                player_name=evt["player"],
-                assist_name="",
-                detail="Yellow Card",
-            ))
+            conn.execute(
+                """INSERT OR IGNORE INTO dashboard_matchevent
+                   (match_id, minute, event_type, team_id, player_name, assist_name, detail, created_at)
+                   VALUES (?, ?, 'YELLOW_CARD', ?, ?, '', 'Yellow Card', ?)""",
+                (match_id, evt["minute"], team_id, evt["player"], now),
+            )
 
         for evt in events["red_cards"]:
             team_id = home_team_data["id"] if evt["team"] == "home" else away_team_data["id"]
-            db.add(MatchEvent(
-                match_id=match_id,
-                minute=evt["minute"],
-                event_type="RED_CARD",
-                team_id=team_id,
-                player_name=evt["player"],
-                assist_name="",
-                detail="Red Card",
-            ))
+            conn.execute(
+                """INSERT OR IGNORE INTO dashboard_matchevent
+                   (match_id, minute, event_type, team_id, player_name, assist_name, detail, created_at)
+                   VALUES (?, ?, 'RED_CARD', ?, ?, '', 'Red Card', ?)""",
+                (match_id, evt["minute"], team_id, evt["player"], now),
+            )
 
         for evt in events["substitutions"]:
             team_id = home_team_data["id"] if evt["team"] == "home" else away_team_data["id"]
-            db.add(MatchEvent(
-                match_id=match_id,
-                minute=evt["minute"],
-                event_type="SUBSTITUTION",
-                team_id=team_id,
-                player_name=f"{evt['player_on']} ← {evt['player_off']}",
-                assist_name="",
-                detail="Substitution",
-            ))
+            conn.execute(
+                """INSERT OR IGNORE INTO dashboard_matchevent
+                   (match_id, minute, event_type, team_id, player_name, assist_name, detail, created_at)
+                   VALUES (?, ?, 'SUBSTITUTION', ?, ?, '', 'Substitution', ?)""",
+                (match_id, evt["minute"], team_id,
+                 f"{evt['player_on']} ← {evt['player_off']}", now),
+            )
 
         for evt in events["goals"]:
             team_id = home_team_data["id"] if evt["team"] == "home" else away_team_data["id"]
             minute = evt["minute"] + evt.get("stoppage", 0)
-            db.add(MatchEvent(
-                match_id=match_id,
-                minute=minute,
-                event_type="GOAL",
-                team_id=team_id,
-                player_name=evt["player"],
-                assist_name="",
-                detail="Goal",
-            ))
+            conn.execute(
+                """INSERT OR IGNORE INTO dashboard_matchevent
+                   (match_id, minute, event_type, team_id, player_name, assist_name, detail, created_at)
+                   VALUES (?, ?, 'GOAL', ?, ?, '', 'Goal', ?)""",
+                (match_id, minute, team_id, evt["player"], now),
+            )
 
-        db.commit()
+        conn.commit()
         print(f"Events seeded: {len(events['goals'])} goals, {len(events['yellow_cards'])} yellows, "
               f"{len(events['red_cards'])} reds, {len(events['substitutions'])} subs.")
 
-        elo_diff = get_elo_diff_for_teams(home_team_data["id"], away_team_data["id"], db)
+        elo_diff = get_elo_diff(conn, home_team_data["id"], away_team_data["id"])
 
         print("Pre-computing win probability snapshots for minutes 0-95...")
         features_list = []
@@ -500,7 +548,7 @@ def main(match_id: int, groups_only: bool):
             minute_list.append((minute, h, a, score_diff, xg_diff))
 
         try:
-            model = get_model()
+            model = joblib.load(MODEL_PATH)
             probs_batch = model.predict_proba(features_list)
             classes = model.classes_.tolist()
         except FileNotFoundError:
@@ -509,29 +557,23 @@ def main(match_id: int, groups_only: bool):
 
         for i, (minute, h, a, score_diff, xg_diff) in enumerate(minute_list):
             probs = dict(zip(classes, probs_batch[i].tolist()))
-            db.add(WinProbabilitySnapshot(
-                match_id=match_id,
-                minute=minute,
-                home_win_prob=probs.get(1, 0.45),
-                draw_prob=probs.get(0, 0.10),
-                away_win_prob=probs.get(-1, 0.45),
-                score_diff=score_diff,
-                xg_diff_approx=xg_diff,
-            ))
+            conn.execute(
+                """INSERT INTO dashboard_winprobabilitysnapshot
+                   (match_id, minute, home_win_prob, draw_prob, away_win_prob,
+                    score_diff, xg_diff_approx, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (match_id, minute, probs.get(1, 0.45), probs.get(0, 0.10),
+                 probs.get(-1, 0.45), score_diff, xg_diff, now),
+            )
 
-        db.commit()
+        conn.commit()
         print("96 win probability snapshots seeded.")
 
         print("\nDone! Replay match is ready.")
         print(f"  {home_team_data['name']} vs {away_team_data['name']}")
         print(f"  Final score: {home_score} - {away_score}")
-
-    except Exception as e:
-        db.rollback()
-        print(f"Error: {e}")
-        raise
     finally:
-        db.close()
+        conn.close()
 
 
 if __name__ == "__main__":
