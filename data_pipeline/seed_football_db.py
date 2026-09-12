@@ -187,6 +187,10 @@ def seed_openfootball(conn, competition_id, reep_index):
 
 
 def import_legacy(conn, competition_id):
+    if not LEGACY_DB_PATH.exists():
+        print(f"legacy wc2026: {LEGACY_DB_PATH.name} not found, skipping "
+              f"(run scripts/seed_replay_match.py to create it)")
+        return
     legacy = sqlite3.connect(f"file:{LEGACY_DB_PATH}?mode=ro", uri=True)
     try:
         legacy.row_factory = sqlite3.Row
